@@ -126,14 +126,19 @@ class Renderer:
 
         return image
 
+def get_resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
 def is_allergen(word: str) -> bool:
     return word.lower().strip() in UK_14_ALLERGENS
 
 def render_label_image(name: str, description: str, ingredients: str, price_pence: int, expiry: str) -> Image.Image:
-    regular_font = ImageFont.truetype("fonts/hyperreadable-regular.ttf", 18)
-    bold_font = ImageFont.truetype("fonts/hyperreadable-bold.ttf", 18)
-    business_font = ImageFont.truetype("fonts/hyperreadable-bold.ttf", 32)
-    title_font = ImageFont.truetype("fonts/hyperreadable-bold.ttf", 48)
+    regular_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-regular.ttf"), 18)
+    bold_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 18)
+    business_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 32)
+    title_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 48)
     renderer = Renderer()
 
     renderer.write_centered(business_font, "Profine UK Ltd.")
