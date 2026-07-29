@@ -1,5 +1,8 @@
 import datetime
 import sys
+import os
+import libusb
+import pkg_about
 
 from gooey import Gooey, GooeyParser
 from brother_ql.raster import BrotherQLRaster
@@ -24,14 +27,12 @@ LABEL_PADDING_PX = 20
 LABEL_LINE_WIDTH_PX = LABEL_WIDTH_PX - (LABEL_PADDING_PX * 2)
 
 LABEL_WIDTH_PX = 696
-LABEL_HEIGHT_PX = 342
 LABEL_PADDING_PX = 20
 LABEL_LINE_WIDTH_PX = LABEL_WIDTH_PX - (LABEL_PADDING_PX * 2)
 
 class Renderer:
-    def __init__(self, width=LABEL_WIDTH_PX, height=LABEL_HEIGHT_PX, padding=LABEL_PADDING_PX):
+    def __init__(self, width=LABEL_WIDTH_PX, padding=LABEL_PADDING_PX):
         self.width = width
-        self.height = height
         self.padding = padding
         self.max_x = width - padding
 
@@ -115,7 +116,8 @@ class Renderer:
         self.cursor_y += 15
 
     def render(self) -> Image.Image:
-        image = Image.new("RGB", (self.width, self.height), "white")
+        height = self.cursor_y + LABEL_PADDING_PX
+        image = Image.new("RGB", (self.width, height), "white")
         draw = ImageDraw.Draw(image)
 
         for kind, coords, content, *extra in self.draw_calls:
@@ -135,10 +137,10 @@ def is_allergen(word: str) -> bool:
     return word.lower().strip() in UK_14_ALLERGENS
 
 def render_label_image(name: str, description: str, ingredients: str, price_pence: int, expiry: str) -> Image.Image:
-    regular_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-regular.ttf"), 18)
-    bold_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 18)
-    business_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 32)
-    title_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 48)
+    regular_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-regular.ttf"), 64)
+    bold_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 64)
+    business_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 128)
+    title_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 96)
     renderer = Renderer()
 
     renderer.write_centered(business_font, "Profine UK Ltd.")
@@ -161,9 +163,9 @@ def render_label_image(name: str, description: str, ingredients: str, price_penc
             renderer.write(font, item)
             renderer.write(regular_font, suffix)
 
-        renderer.line_break(40)
+        renderer.line_break(64)
 
-    renderer.write(regular_font, "Keep Refrigerated 5°C | Eat on Day of Purchase | Use by: ")
+    renderer.write(regular_font, "Keep Refrigerated 5°C | Use by: ")
     renderer.write(bold_font, expiry)
 
     if price_pence:
@@ -187,7 +189,7 @@ def print_label(image: Image.Image, copies: int):
     )
 
     print(f"Sending {copies} label(s) to printer...")
-    send(instructions=instructions, printer_identifier="usb://0x04f9:0x2015", backend_identifier="pyusb", blocking=True)
+    send(instructions=instructions, printer_identifier="usb://0x04f9:0x2042", backend_identifier="pyusb", blocking=True)
     print("Done!")
 
 @Gooey(program_name="Clear Plate", return_to_config=True, default_size=(600, 600))
