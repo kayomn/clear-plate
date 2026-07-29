@@ -1,8 +1,8 @@
 import datetime
+import json
 import sys
 import os
-import libusb
-import pkg_about
+import re
 
 from gooey import Gooey, GooeyParser
 from brother_ql.raster import BrotherQLRaster
@@ -10,16 +10,74 @@ from brother_ql.conversion import convert
 from brother_ql.backends.helpers import send
 from PIL import Image, ImageDraw, ImageFont
 
-UK_14_ALLERGENS = [
-    "celery", "cereals containing gluten", "wheat", "rye", "barley", "oats",
-    "spelt", "khorasan", "crustacean", "crustaceans", "prawns", "crabs", "lobster",
-    "crayfish", "eggs", "egg", "fish", "lupin", "milk", "butter", "cream", "cheese",
-    "whey", "molluscs", "mollusc", "mussels", "oysters", "squid", "snails", "mustard",
-    "nuts", "almonds", "hazelnuts", "walnuts", "cashews", "pecans", "brazil nuts",
-    "pistachios", "macadamia", "peanuts", "sesame", "sesame seeds", "soy",
-    "soya", "soybean", "soy beans", "soy bean", "soybeans", "sulphur dioxide",
-    "sulphites", "sulfites"
-]
+def allergen_regex(allergen_list: list[str]) -> re.Pattern:
+    patterns = []
+    # Sort longest-first so "peanut butter" matches before "peanut"
+    sorted_allergens = sorted(allergen_list, key=len, reverse=True)
+    
+    for term in sorted_allergens:
+        escaped_term = re.escape(term)
+        
+        # If term doesn't already end with 's', allow an optional 's' at the end
+        if not term.endswith("s"):
+            pattern = rf"\b{escaped_term}s?\b"
+        else:
+            pattern = rf"\b{escaped_term}\b"
+            
+        patterns.append(pattern)
+        
+    # Combine into a single regex engine for fast performance
+    combined_pattern = "|".join(patterns)
+    return re.compile(combined_pattern, re.IGNORECASE)
+
+UK_14_ALLERGENS_EXPANDED = allergen_regex([
+    # Celery
+    "celery", "celeriac",
+
+    # Cereals containing gluten
+    "cereals containing gluten", "gluten", "wheat", "rye", "barley", "oats", "spelt", "khorasan", "kamut", "triticale",
+    "farro", "freekeh", "bulgur", "semolina", "couscous", "einkorn", "emmer",
+
+    # Crustaceans
+    "crustacean", "prawn", "shrimp", "crab", "lobster", "crayfish", "langoustine", "scampi",
+
+    # Eggs
+    "eggs", "egg", "egg yolk", "egg white", "albumin",
+
+    # Fish
+    "fish", "fishes", "anchovy", "anchovies", "isinglass", "tuna", "salmon", "cod", "haddock"
+
+    # Lupin
+    "lupin", "lupines", "lupine",
+
+    # Milk / Dairy
+    "milk", "butter", "cream", "cheese", "whey", "ghee", "casein", "caseinate", "lactalbumin", "lactoglobulin",
+    "lactose", "curd", "curds", "yoghurt", "yogurt",
+
+    # Molluscs
+    "molluscs", "mollusc", "mollusk", "mollusks", "mussel", "oyster", "squid", "calamari",
+    "snail", "escargot", "clam", "scallop", "octopus", "cuttlefish", "cockles", "whelks",
+
+    # Mustard
+    "mustard",
+
+    # Tree Nuts
+    "nut", "almond", "hazelnut", "walnut", "cashew", "pecans", "pecan", "pistachio", "macadamia", "marzipan",
+    "praline",
+
+    # Peanuts
+    "peanut", "groundnut", "peanut butter",
+
+    # Sesame
+    "sesame", "tahini",
+
+    # Soy / Soya
+    "soy", "soya", "soybean", "edamame", "tofu", "tempeh",
+
+    # Sulphur dioxide / Sulphites
+    "sulphur dioxide", "sulfur dioxide", "sulphite", "sulfite", "e220", "e221", "e222", "e223", "e224", "e225", "e226",
+    "e227", "e228"
+])
 
 LABEL_WIDTH_PX = 696
 LABEL_HEIGHT_PX = 342
@@ -133,43 +191,49 @@ def get_resource_path(relative_path):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
 
-def is_allergen(word: str) -> bool:
-    return word.lower().strip() in UK_14_ALLERGENS
+def is_allergen(ingredient: str) -> bool:
+    matches = UK_14_ALLERGENS_EXPANDED.findall(ingredient)
 
-def render_label_image(name: str, description: str, ingredients: str, price_pence: int, expiry: str) -> Image.Image:
+    return len(matches) != 0
+
+def render_label_image(product: dict) -> Image.Image:
+    minor_details_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-regular.ttf"), 32)
+    major_details_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 32)
     regular_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-regular.ttf"), 64)
-    bold_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 64)
-    business_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 128)
-    title_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 96)
+    business_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 96)
+    title_font = ImageFont.truetype(get_resource_path("fonts/hyperreadable-bold.ttf"), 80)
     renderer = Renderer()
 
     renderer.write_centered(business_font, "Profine UK Ltd.")
-    renderer.write_centered(title_font, name)
+    renderer.write_centered(title_font, product["Name"])
     renderer.line_break(12)
 
-    if description:
-        renderer.write_centered(regular_font, description)
+    if product["Description"]:
+        renderer.write_centered(regular_font, product["Description"])
         renderer.line_break(12)
 
-    if ingredients:
-        renderer.write(bold_font, "INGREDIENTS: ")
+    if product["Ingredients"]:
+        renderer.write(major_details_font, "INGREDIENTS: ")
 
-        ingredients_list = [i.strip() for i in ingredients.split(",") if i.strip()]
+        ingredients_list = [i.strip() for i in product["Ingredients"].split(",") if i.strip()]
 
         for idx, item in enumerate(ingredients_list):
             is_last = (idx == len(ingredients_list) - 1)
             suffix = "." if is_last else ", "
-            font = bold_font if is_allergen(item) else regular_font
+            font = major_details_font if is_allergen(item) else minor_details_font
+
             renderer.write(font, item)
-            renderer.write(regular_font, suffix)
+            renderer.write(minor_details_font, suffix)
 
         renderer.line_break(64)
 
-    renderer.write(regular_font, "Keep Refrigerated 5°C | Use by: ")
-    renderer.write(bold_font, expiry)
+    renderer.write_centered(minor_details_font, "Keep Refrigerated 5°C")
 
-    if price_pence:
-        renderer.write_centered(regular_font, f"£{(price_pence / 100):.2f}")
+    if product["Expiry"]:
+        renderer.write_centered(major_details_font, "Use by: " + product["Expiry"])
+
+    if product["Price"]:
+        renderer.write_centered(regular_font, f"£{(product["Price"] / 100):.2f}")
 
     return renderer.render()
 
@@ -192,31 +256,68 @@ def print_label(image: Image.Image, copies: int):
     send(instructions=instructions, printer_identifier="usb://0x04f9:0x2042", backend_identifier="pyusb", blocking=True)
     print("Done!")
 
-@Gooey(program_name="Clear Plate", return_to_config=True, default_size=(600, 600))
+@Gooey(program_name="Clear Plate", return_to_config=True, default_size=(600, 700), navigation="TABBED", required_cols=1, optional_cols=2)
 def main():
     todays_date = datetime.date.today().strftime('%Y-%m-%d')
 
     parser = GooeyParser(
-        prog="ClearPlate",
         description="Natasha's Law-Compliant Label Generator for Brother QL-700",
     )
 
-    parser.add_argument("--name", required=True, metavar="Name", help="Product Name (e.g., 'Ham & Cheese Sandwich').")
-    parser.add_argument("--description", default="", metavar="Description", help="Short product description.")
-    parser.add_argument("--ingredients", required=True, metavar="Ingredient List", help="Comma separated list of ingredients.")
-    parser.add_argument("--price", default=0, metavar="Price", help="Listed item price in pence.")
-    parser.add_argument("--expiry", widget="DateChooser", default=todays_date, metavar="Use By Date", help="Listed item price in pence.")
-    parser.add_argument("--copies", type=int, default=1, metavar="Copies", help="Number of labels to print.")
-    parser.add_argument("--preview", action="store_true", help="Save label image to preview.png instead of printing")
+    sub_parsers = parser.add_subparsers(help="Actions", dest="Action")
+    create_command = sub_parsers.add_parser("Create")
+    create_command._optionals.title = "Product Details"
+
+    create_command.add_argument("--Name", type=str, default="", help="Product Name (e.g., 'Ham Sandwich').")
+    create_command.add_argument("--Description", type=str, default="", help="Short product description.")
+    create_command.add_argument("--Ingredients", type=str, default="", metavar="Ingredient List", help="Comma separated list of ingredients.")
+    create_command.add_argument("--Price", type=int, default=0, metavar="Price", help="Listed item price in pence.")
+    create_command.add_argument("--Expiry", widget="DateChooser", default=todays_date, metavar="Use-By Date", help="Listed item price in pence.")
+
+    create_command.add_argument("Path",
+        type=str,
+        widget="FileSaver",
+        metavar="Save Location",
+        gooey_options={"wildcard": "JSON Files (*.json)|*.json"}
+    )
+
+    print_command = sub_parsers.add_parser("Print")
+    print_command._optionals.title = "Print Label"
+
+    print_command.add_argument("Path", 
+        type=str,
+        widget="FileChooser",
+        metavar="Product File",
+        gooey_options={"wildcard": "JSON Files (*.json)|*.json"}
+    )
+
+    print_mode = print_command.add_mutually_exclusive_group()
+
+    print_mode.add_argument("--Copies", type=int, default=1, widget="IntegerField", help="Print this many labels.")
+    print_mode.add_argument("--Preview", action="store_true", metavar="Preview-Only", help="Save label image to preview.png.")
 
     args = parser.parse_args()
-    label = render_label_image(str(args.name), str(args.description), str(args.ingredients), int(args.price), args.expiry)
 
-    if args.preview:
-        label.save("preview.png")
-        print("Label saved to preview.png")
-    else:
-        print_label(label, copies=args.copies)
+    match args.Action:
+        case "Create":
+            with open(args.Path, "w", encoding="utf-8") as file:
+                product = dict(vars(args))
+
+                product.pop("Path", None)
+                json.dump(product, file, indent=4)
+
+        case "Print":
+            with open(args.Path, "r", encoding="utf-8") as file:
+                product = json.load(file)
+                print(product)
+                image = render_label_image(product)
+
+                if args.Preview:
+                    image.save("preview.png")
+                    print("Label saved to preview.png")
+
+                else:
+                    print_label(label, copies=args.Copies)
 
 if __name__ == "__main__":
     main()
