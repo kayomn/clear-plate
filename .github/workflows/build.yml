@@ -16,7 +16,7 @@ jobs:
           pip install pyinstaller -r requirements.txt
       - name: Build with PyInstaller
         run: |
-          pyinstaller --onefile --noconsole --add-data="fonts;fonts" --add-binary "libusb-1.0.dll;." --windowed main.py
+          pyinstaller --onefile --noconsole --add-data="fonts;fonts" --windowed main.py
       - uses: actions/upload-artifact@v4
         with:
           name: ClearPlate
