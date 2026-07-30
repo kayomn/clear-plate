@@ -233,7 +233,8 @@ def render_label_image(product: dict) -> Image.Image:
         renderer.write_centered(major_details_font, "Use by: " + product["Expiry"])
 
     if product["Price"]:
-        renderer.write_centered(regular_font, f"£{(product["Price"] / 100):.2f}")
+        price = product["Price"]
+        renderer.write_centered(regular_font, f"£{(price / 100):.2f}")
 
     return renderer.render()
 
