@@ -17,4 +17,5 @@ __pycache__/
 Thumbs.db
 
 # Output files
-/preview.png
+/main.spec
+/build

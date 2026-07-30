@@ -80,7 +80,7 @@ def add_print_page(command):
 		help="Print this many labels.",
 	)
 
-@Gooey(program_name="Clear Plate", return_to_config=True, default_size=(600, 700), navigation="TABBED", required_cols=1, optional_cols=1)
+@Gooey(program_name="Clear Plate", return_to_config=True, default_size=(600, 750), navigation="TABBED", required_cols=1, optional_cols=1)
 def main():
 	parser = GooeyParser(
 		description="Natasha's Law-Compliant Label Generator for Brother QL-700",
