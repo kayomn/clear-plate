@@ -36,14 +36,25 @@ class Label(NamedTuple):
         if self.ingredients:
             label.write(major_details_font, "INGREDIENTS: ")
 
-            for idx, item in enumerate(self.ingredients):
-                is_last = (idx == len(self.ingredients) - 1)
-                suffix = "." if is_last else ", "
-                is_allergen = len(UK_14.findall(item)) != 0
-                font = major_details_font if is_allergen else minor_details_font
+            allergens = []
 
-                label.write(font, item)
-                label.write(minor_details_font, suffix)
+            for item in self.ingredients:
+                is_allergen = UK_14.findall(item)
+
+                if is_allergen:
+                    allergens.append(item)
+                else:
+                    label.write(minor_details_font, f"{item}, ")
+
+            label.line_break(40)
+            label.write(major_details_font, "ALLERGENS: ")
+
+            if allergens:
+                for item in self.ingredients:
+                    if UK_14.findall(item):
+                        label.write(major_details_font, f"{item}, ")
+            else:
+                label.write(minor_details_font, "None.")
 
             label.line_break(64)
 

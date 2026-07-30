@@ -105,7 +105,7 @@ def main():
 				product = {
 					"name": args.Name.title(),
 					"description": args.Description.title(),
-					"ingredients": [i.strip() for i in args.Ingredients.split(",") if i.strip()],
+					"ingredients": [i.strip().title() for i in args.Ingredients.split(",") if i.strip()],
 					"price": args.Price,
 				}
 
